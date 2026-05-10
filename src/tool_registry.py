@@ -52,6 +52,7 @@ class ToolRegistry:
             "get_financial_risk_alerts": self._get_financial_risk_alerts,
             "get_daily_owner_briefing": self._get_daily_owner_briefing,
             "get_recommendation_for_question": self._get_recommendation_for_question,
+            "search_products_by_name": self._search_products_by_name,
         }
         self._definitions = self._build_definitions()
 
@@ -282,6 +283,13 @@ class ToolRegistry:
                 ["Uses deterministic heuristics over curated Odoo tools."],
                 ["What should I do about stock this week?"],
             ),
+            "search_products_by_name": ToolDefinition(
+                "search_products_by_name",
+                "Search active products by NAME or SKU keyword (ilike) and return how many of each are in stock with prices. Use this for SPECIFIC product questions like 'how many wetsuits do I have?', 'stock of boots?', 'do I sell board shorts?', 'qual o stock dos fatos?'. Returns matching products with qty_available, total stock across all matches, and total retail value. PREFER this tool over get_stock_value when the user mentions any product type, brand, or keyword.",
+                {"query": {"type": "string", "required": True}, "limit": {**limit, "default": 20, "maximum": 50}},
+                ["Matches on product NAME or default_code (SKU). Aggregates across variants (sizes/colors)."],
+                ["Quantos fatos tenho em stock?", "Stock dos boots Blundstone", "How many wetsuits do I have?", "Do I sell board shorts?"],
+            ),
         }
 
     def _validate_arguments(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -436,4 +444,10 @@ class ToolRegistry:
         return self.tools.recommendation_for_question(
             query=str(arguments.get("query") or ""),
             days=int(arguments.get("days") or 90),
+        )
+
+    def _search_products_by_name(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        return self.tools.search_products_by_name(
+            query=str(arguments.get("query") or ""),
+            limit=int(arguments.get("limit") or 20),
         )

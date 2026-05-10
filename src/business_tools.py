@@ -771,6 +771,49 @@ class RetailBusinessTools:
             for product in products
         ]
 
+    def search_products_by_name(self, query: str, limit: int = 20) -> dict[str, Any]:
+        """Search active products whose name OR sku matches the query (case-insensitive).
+        Returns total stock + price across all matching variants. Ideal for questions like
+        "how many wetsuits do I have?" or "do I sell board shorts?".
+        """
+        clean_query = (query or "").strip()
+        if not clean_query:
+            return {"query": "", "match_count": 0, "total_qty_available": 0.0, "products": []}
+
+        # Search both by name and by default_code (SKU). OR domain in Odoo syntax.
+        products = self.client.search_read(
+            "product.product",
+            domain=[
+                ["active", "=", True],
+                "|",
+                ["name", "ilike", clean_query],
+                ["default_code", "ilike", clean_query],
+            ],
+            fields=["default_code", "name", "qty_available", "virtual_available", "list_price", "categ_id"],
+            limit=limit,
+        )
+
+        total_qty = sum(float(p.get("qty_available") or 0) for p in products)
+        total_value = sum(float(p.get("qty_available") or 0) * float(p.get("list_price") or 0) for p in products)
+
+        return {
+            "query": clean_query,
+            "match_count": len(products),
+            "total_qty_available": round(total_qty, 2),
+            "total_retail_value_eur": round(total_value, 2),
+            "products": [
+                {
+                    "sku": product.get("default_code") or "no-sku",
+                    "name": product.get("name"),
+                    "category": (product.get("categ_id") or [None, None])[1],
+                    "qty_available": product.get("qty_available"),
+                    "forecast": product.get("virtual_available"),
+                    "price_eur": product.get("list_price"),
+                }
+                for product in products
+            ],
+        }
+
     def product_replenishment_insight(
         self,
         query: str,
