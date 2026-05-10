@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: retail-agent-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: ODOO_URL
+        sync: false
+      - key: ODOO_DB
+        sync: false
+      - key: ODOO_USERNAME
+        sync: false
+      - key: ODOO_API_KEY
+        sync: false
+      - key: APP_AUTH_TOKEN
+        sync: false
+      - key: WHATSAPP_ALLOWED_NUMBERS
+        sync: false
+      - key: DATABRICKS_HOST
+        sync: false
+      - key: DATABRICKS_TOKEN
+        sync: false
+      - key: DATABRICKS_MODEL_ENDPOINT
+        sync: false
+
+  - type: web
+    name: retail-agent-web
+    runtime: docker
+    dockerfilePath: ./frontend/Dockerfile
+    dockerContext: ./frontend
+    envVars:
+      - key: NEXT_PUBLIC_API_BASE_URL
+        sync: false
