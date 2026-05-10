@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -130,27 +131,45 @@ class OpenAILLMClient:
             "messages": [{"role": message.role, "content": message.content} for message in messages],
             "temperature": temperature,
         }
-        request = urllib.request.Request(
-            "https://api.openai.com/v1/chat/completions",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-            },
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
-                raw = json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            body = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"OpenAI LLM request failed: {exc.code} {body}") from exc
+        body_bytes = json.dumps(payload).encode("utf-8")
 
-        choices = raw.get("choices")
-        if isinstance(choices, list) and choices:
-            message = choices[0].get("message", {})
-            content = message.get("content")
-            if isinstance(content, str):
-                return content
-
-        raise RuntimeError(f"Unable to parse OpenAI LLM response: {raw}")
+        # Retry on 429 (rate limit) and 5xx (transient server errors) with
+        # exponential backoff. This dramatically reduces fallbacks under load.
+        max_retries = 4
+        base_delay = 1.5
+        last_exc: Exception | None = None
+        for attempt in range(max_retries + 1):
+            request = urllib.request.Request(
+                "https://api.openai.com/v1/chat/completions",
+                data=body_bytes,
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
+                    raw = json.loads(response.read().decode("utf-8"))
+                choices = raw.get("choices")
+                if isinstance(choices, list) and choices:
+                    message = choices[0].get("message", {})
+                    content = message.get("content")
+                    if isinstance(content, str):
+                        return content
+                raise RuntimeError(f"Unable to parse OpenAI LLM response: {raw}")
+            except urllib.error.HTTPError as exc:
+                body = exc.read().decode("utf-8", errors="replace")
+                last_exc = RuntimeError(f"OpenAI LLM request failed: {exc.code} {body}")
+                if exc.code == 429 or 500 <= exc.code < 600:
+                    if attempt < max_retries:
+                        time.sleep(base_delay * (2 ** attempt))
+                        continue
+                raise last_exc from exc
+            except (urllib.error.URLError, TimeoutError) as exc:
+                last_exc = RuntimeError(f"OpenAI LLM request transport error: {exc}")
+                if attempt < max_retries:
+                    time.sleep(base_delay * (2 ** attempt))
+                    continue
+                raise last_exc from exc
+        raise last_exc or RuntimeError("OpenAI LLM call failed after retries")
