@@ -29,13 +29,16 @@ The endpoint accepts:
 - Twilio-style form payloads with `From` and `Body`
 - WhatsApp Cloud API-style JSON webhook payloads
 
-If the request is Twilio form encoded, the backend returns TwiML. If it is JSON, the backend returns JSON:
+If the request is Twilio form encoded, the backend returns TwiML. If it is JSON, the backend returns JSON with the answer and selected tool:
 
 ```json
 {
-  "answer": "Today's sales are EUR 494.75 from 11 orders."
+  "answer": "Today's sales are EUR 494.75 from 11 orders.",
+  "tool": "get_today_sales"
 }
 ```
+
+The agent keeps WhatsApp answers shorter than app answers and avoids customer personal data.
 
 ## Environment
 
@@ -50,6 +53,27 @@ WHATSAPP_APP_SECRET=replace-with-meta-app-secret
 If `WHATSAPP_ALLOWED_NUMBERS` is empty, all senders are allowed. For a real pilot, set this to the approved phone numbers only.
 
 For Twilio, set `TWILIO_AUTH_TOKEN` and keep `PUBLIC_WHATSAPP_WEBHOOK_URL` equal to the webhook URL configured in Twilio. For Meta WhatsApp Cloud API, set `WHATSAPP_APP_SECRET` to verify `X-Hub-Signature-256`. If these secrets are absent, local testing still works, but production signature checks are disabled.
+
+## Request Handling
+
+| Step | Behavior |
+|---|---|
+| Parse payload | Reads JSON bodies for Meta Cloud API or form-encoded bodies for Twilio |
+| Verify signature | Uses Twilio SHA1 signature or Meta SHA256 signature when the relevant secret is configured |
+| Extract sender | Normalizes Twilio `whatsapp:+...` or Meta `messages[0].from` into a phone number |
+| Check allowlist | Rejects unauthorized senders with HTTP 403 when `WHATSAPP_ALLOWED_NUMBERS` is set |
+| Check rate limit | Rejects excess messages with HTTP 429 based on `WHATSAPP_RATE_LIMIT_PER_MINUTE` |
+| Extract message | Uses Twilio `Body` or Meta `messages[0].text.body` |
+| Answer question | Calls the same `RetailAgent` path with `channel=\"whatsapp\"` |
+| Return response | Returns TwiML XML for Twilio or JSON for Meta/local tests |
+
+## Provider Options
+
+| Option | When To Use | Notes |
+|---|---|---|
+| Twilio WhatsApp sandbox | Fastest demo path | Good for testing inbound/outbound behavior quickly |
+| Meta WhatsApp Cloud API | Better production path | Requires Meta setup, webhook URL, and app secret |
+| Local JSON test | Backend development | Does not require provider setup, but does not prove WhatsApp delivery |
 
 ## Rodrigo Tasks
 
@@ -70,6 +94,8 @@ How much did we sell today?
 What is the stock value?
 What categories sold today?
 What is low stock?
+What should Jhonny focus on today?
+Are purchases too high compared with sales?
 ```
 
 5. Add production safeguards before a client rollout:
@@ -103,6 +129,21 @@ Invoke-RestMethod `
 
 Cloud hosting is not required for app development. Only add a public URL when WhatsApp provider testing needs inbound internet access.
 
+## Security Tests
+
+Run the local API security regression before a live WhatsApp demo:
+
+```powershell
+py scripts/evaluate_api_security.py
+```
+
+This checks:
+
+- allowed and blocked sender handling
+- per-sender rate limiting
+- Twilio signature verification
+- Meta signature verification
+
 ## Demo Positioning
 
-WhatsApp is the owner interface. The app is for dashboards; WhatsApp is for fast answers while the owner is on the shop floor.
+WhatsApp is the fast owner channel. The app remains the primary review surface for dashboards, evidence, and richer analytics; WhatsApp is for short answers while the owner is on the shop floor.

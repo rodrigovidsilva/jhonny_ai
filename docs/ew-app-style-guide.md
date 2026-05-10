@@ -1,6 +1,6 @@
 # EW App Starter And Style Guide
 
-**Status:** Draft  
+**Status:** Current starter reference
 **Audience:** App builders using the EW/EY-P app shell  
 **Scope:** Reusable frontend structure, theme behavior, profile menu, and section styling
 
@@ -19,7 +19,7 @@
 
 This starter preserves the structure and visual style of the EW Use Case Hub for future apps. It keeps the same top-right dark/light toggle, profile button/dropdown, EY-P blue highlights, Aptos/Inter/Segoe UI font stack, card borders, and dark-first app frame.
 
-The reusable implementation lives in `frontend/components/app-shell` and is designed for Next.js apps, while the same classes and tokens can be copied into other React/Tailwind projects.
+The reusable implementation lives in `frontend/components/app-shell` and is designed for Next.js apps, while the same classes and tokens can be copied into other React/Tailwind projects. The current Jhonny app also uses optional brand logo and navigation accessory slots for client-specific controls such as the demo token input.
 
 ## 2. Starter Structure
 
@@ -73,11 +73,15 @@ Wrap each app page in `AppShell`:
 <AppShell
   appName="My App"
   brandPrefix="EW"
+  brandLogoSrc="/optional-logo.png"
   subtitle="AI-enabled workflow"
   navItems={navItems}
   activeItem={mode}
   onSelectItem={setMode}
+  navPrefixAccessory={optionalNavControl}
+  rightAccessory={optionalHeaderControl}
   user={user}
+  footer={<span>Client-facing footer text</span>}
 >
   {children}
 </AppShell>
@@ -87,8 +91,10 @@ The header keeps the same structure as the Use Case Hub:
 
 | Area | Behavior |
 | --- | --- |
-| Left brand | Two-letter mark, blue prefix, app name, optional subtitle. |
-| Navigation | Ghost buttons by default, blue `secondary` active state. |
+| Left brand | Optional image logo, or two-letter mark, blue prefix, app name, and optional subtitle. |
+| Navigation | Horizontally scrollable ghost buttons with optional icons and hover blue treatment. |
+| Navigation accessory | Optional `navPrefixAccessory` slot before nav items, useful for compact controls like a demo token input. |
+| Right accessory | Optional `rightAccessory` slot before profile/theme controls. |
 | Profile | Rounded avatar button, right-aligned dropdown, edit dialog. |
 | Theme | Top-right icon button using `Moon` and `Sun`; toggles light/dark. |
 
@@ -124,5 +130,6 @@ Prefer semantic colors and tokens over hard-coded colors. Use `bg-eyp-blue/10`, 
 3. Use `AppShell` for every main page.
 4. Put `UserProfileMenu` and the dark/light toggle in the top-right header through `AppHeader`.
 5. Build page regions with `SectionCard`, `fieldGroupClass`, and `compactFieldGroupClass`.
-6. Keep navigation active states as `bg-eyp-blue/10 text-eyp-blue`.
-7. Verify both themes before shipping: page background, cards, borders, forms, popovers, and dialogs.
+6. Use `brandLogoSrc`, `navPrefixAccessory`, or `rightAccessory` only when the app needs client branding or compact header controls.
+7. Keep navigation hover and selected treatments consistent with the current shell.
+8. Verify both themes before shipping: page background, cards, borders, forms, popovers, and dialogs.

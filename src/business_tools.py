@@ -1784,10 +1784,56 @@ class RetailBusinessTools:
         bills = self.client.search_read(
             "account.move",
             domain=domain,
-            fields=["name", "partner_id", "invoice_date", "invoice_date_due", "amount_total_signed", "amount_residual_signed", "payment_state"],
+            fields=[
+                "id",
+                "name",
+                "partner_id",
+                "invoice_date",
+                "invoice_date_due",
+                "amount_total_signed",
+                "amount_residual_signed",
+                "payment_state",
+                "invoice_line_ids",
+            ],
             limit=limit,
             order="invoice_date desc",
         )
+        bill_line_ids = [
+            int(line_id)
+            for bill in bills
+            for line_id in (bill.get("invoice_line_ids") or [])
+            if isinstance(line_id, int)
+        ]
+        lines_by_bill: dict[int, list[dict[str, Any]]] = defaultdict(list)
+        if bill_line_ids:
+            bill_lines = self.client.search_read(
+                "account.move.line",
+                domain=[["id", "in", bill_line_ids]],
+                fields=[
+                    "move_id",
+                    "product_id",
+                    "name",
+                    "quantity",
+                    "price_unit",
+                    "price_subtotal",
+                    "price_total",
+                ],
+                limit=len(bill_line_ids),
+            )
+            for line in bill_lines:
+                bill_id = line.get("move_id", [None])[0] if isinstance(line.get("move_id"), list) else None
+                if not isinstance(bill_id, int):
+                    continue
+                lines_by_bill[bill_id].append(
+                    {
+                        "product": _many2one_name(line.get("product_id"), str(line.get("name") or "Bill line")),
+                        "description": line.get("name"),
+                        "quantity": round(float(line.get("quantity") or 0), 2),
+                        "unit_price": abs(round(float(line.get("price_unit") or 0), 2)),
+                        "subtotal": abs(round(float(line.get("price_subtotal") or 0), 2)),
+                        "total": abs(round(float(line.get("price_total") or 0), 2)),
+                    }
+                )
         all_bills = self.client.search_read(
             "account.move",
             domain=domain,
@@ -1804,13 +1850,14 @@ class RetailBusinessTools:
             for key, item in by_supplier.items()
         ]
         suppliers.sort(key=lambda item: item["open_amount"], reverse=True)
-        total_residual = abs(sum(float(row.get("amount_residual_signed") or 0) for row in bills))
+        total_residual = abs(sum(float(row.get("amount_residual_signed") or 0) for row in all_bills))
         return {
             "total_open_payable": round(total_residual, 2),
             "count": self.client.search_count("account.move", domain),
             "by_supplier": suppliers[:12],
             "bills": [
                 {
+                    "id": row.get("id"),
                     "reference": row.get("name"),
                     "supplier": _many2one_name(row.get("partner_id"), "Unknown supplier"),
                     "date": row.get("invoice_date"),
@@ -1818,6 +1865,7 @@ class RetailBusinessTools:
                     "amount": abs(round(float(row.get("amount_total_signed") or 0), 2)),
                     "open_amount": abs(round(float(row.get("amount_residual_signed") or 0), 2)),
                     "payment_state": row.get("payment_state"),
+                    "lines": lines_by_bill.get(int(row["id"]), []) if isinstance(row.get("id"), int) else [],
                 }
                 for row in bills
             ],

@@ -2,7 +2,7 @@
 
 ## Current Decision
 
-Keep the app local until the demo flow is stable and cloud access is available.
+Keep the app local until the review demo is stable and cloud access is confirmed.
 
 | Service | Local URL | Command |
 |---|---|---|
@@ -10,22 +10,25 @@ Keep the app local until the demo flow is stable and cloud access is available.
 | Frontend app | `http://127.0.0.1:3000` | `cd frontend && npm run dev` |
 | Health check | `http://127.0.0.1:8000/health` | `Invoke-RestMethod -Uri http://127.0.0.1:8000/health` |
 
-Do not add Azure or AWS deployment automation until an account, subscription, or resource group is confirmed.
+Do not add provider-specific Azure or AWS automation until an account, subscription, resource group, or client hosting preference is confirmed.
 
-## Services
+## Hosting Shape
 
 When hosting is needed, deploy two services:
 
-1. Backend API: FastAPI, Dockerfile at project root
-2. Web app: Next.js, Dockerfile in `frontend/`
+| Service | Artifact | Runtime Notes |
+|---|---|---|
+| Backend API | Root `Dockerfile` | FastAPI, Odoo XML-RPC, LLM calls, WhatsApp webhook |
+| Web app | `frontend/Dockerfile` | Next.js app, public backend URL, demo token UI |
 
-`render.yaml` is included as a Render blueprint, but the same split works on Railway, Fly.io, Azure Container Apps, AWS App Runner, or ECS Fargate.
+`render.yaml` is included as a two-service Render blueprint. The same split also works on Railway, Fly.io, Azure Container Apps, AWS App Runner, or ECS Fargate.
 
 Preferred target once cloud access exists:
 
 | Option | Recommendation | Why |
 |---|---|---|
-| Azure Container Apps | Default first choice | Fits the existing two-container split, managed secrets, HTTPS, logs, and likely Microsoft/EY alignment |
+| Azure Container Apps | Default first enterprise path | Fits the existing two-container split, managed secrets, HTTPS, logs, and likely Microsoft/EY alignment |
+| Render | Fast review environment | Existing blueprint is already present and maps directly to the current services |
 | AWS App Runner or ECS Fargate | Use if AWS access comes first | Equivalent container hosting path with Secrets Manager and CloudWatch |
 
 ## Backend Environment
@@ -46,9 +49,12 @@ TWILIO_AUTH_TOKEN=<twilio-auth-token-if-using-twilio>
 WHATSAPP_APP_SECRET=<meta-app-secret-if-using-meta-cloud-api>
 OPENAI_API_KEY=<openai-api-key>
 OPENAI_MODEL=gpt-4o-mini
+DATABRICKS_HOST=<optional-databricks-workspace-url>
+DATABRICKS_TOKEN=<optional-databricks-token>
+DATABRICKS_MODEL_ENDPOINT=<optional-serving-endpoint>
 ```
 
-Rotate the Odoo key before deploying because the development key was exposed during setup.
+Rotate the Odoo key before deploying because development credentials should not be reused in hosted review or paid-pilot environments.
 
 For local development, keep these values in `.env` only. For hosted environments, move them into managed secrets and never bake them into Docker images.
 
@@ -56,6 +62,24 @@ For local development, keep these values in `.env` only. For hosted environments
 
 ```env
 NEXT_PUBLIC_API_BASE_URL=https://<backend-api-url>
+```
+
+The frontend stores the demo token in browser local storage and sends it as `X-App-Token` to protected backend routes.
+
+## Auth And CORS
+
+The backend protects app endpoints with `APP_AUTH_TOKEN`.
+
+Clients should send:
+
+```text
+X-App-Token: <demo-access-token>
+```
+
+Set `APP_CORS_ORIGINS` to the exact hosted frontend URL. For local development, keep:
+
+```env
+APP_CORS_ORIGINS=http://127.0.0.1:3000,http://localhost:3000
 ```
 
 ## Health Check
@@ -72,37 +96,29 @@ Expected response:
 }
 ```
 
-Latest local validation:
+## Validation Checklist
 
-| Check | Result |
-|---|---|
-| Odoo authentication | Passed |
-| Backend `/health` | Passed |
-| Backend `/dashboard` | Passed with live data |
-| Backend `/chat` | Passed with `stock_value` tool |
-| Frontend production build | Passed with `npm run build` |
+Run these before a stakeholder or client demo:
 
-## Demo Auth
+| Check | Command | Expected |
+|---|---|---|
+| Backend dependencies | `py -m pip install -r requirements.txt` | Install completes |
+| Odoo authentication | `py scripts/test_connection.py` | Authenticates and reads sample data |
+| Agent regression | `py scripts/evaluate_agent.py` | Deterministic routing checks pass |
+| API security | `py scripts/evaluate_api_security.py` | Allowlist, rate-limit, and signature checks pass |
+| Backend health | `Invoke-RestMethod -Uri http://127.0.0.1:8000/health` | Returns `{"status":"ok"}` |
+| OpenAI path | `py scripts/smoke_openai_chat.py "How much did we sell today?"` | Returns provider `openai` when configured |
+| Frontend build | `cd frontend && npm run build` | Production build succeeds |
 
-The backend protects app endpoints with `APP_AUTH_TOKEN`.
+## LLM Routing
 
-Clients should send:
+The backend tries providers in this order:
 
-```text
-X-App-Token: <demo-access-token>
-```
+1. OpenAI when `OPENAI_API_KEY` is set.
+2. Databricks Model Serving when `DATABRICKS_HOST`, `DATABRICKS_TOKEN`, and `DATABRICKS_MODEL_ENDPOINT` are set.
+3. Deterministic routing when no LLM provider is configured.
 
-The web app stores this token in browser local storage for the demo.
-
-## OpenAI Smoke Test
-
-Before a client demo, verify that the real LLM path is active:
-
-```powershell
-py scripts/smoke_openai_chat.py "How much did we sell today?"
-```
-
-The command fails if `OPENAI_API_KEY` is missing or if the agent does not return through the OpenAI provider path.
+Use `scripts/smoke_openai_chat.py` before demos that need proof the real OpenAI path is active.
 
 ## Logging
 
@@ -110,15 +126,18 @@ The FastAPI service writes structured JSON logs for:
 
 - app chat questions
 - WhatsApp messages
-- selected tool
+- selected tool and intent
+- LLM provider
+- tool trace summary
 - latency
-- success/failure
+- success or failure
+- request ID for `/chat`
 
 For a paid pilot, connect these logs to the host's log viewer first. Add persistent analytics only after customer usage justifies it.
 
 ## WhatsApp URL
 
-For local testing, expose the backend with a tunnel if a WhatsApp provider needs to reach it. After backend deployment, configure the WhatsApp provider webhook to:
+For local testing, expose the backend with a tunnel if a WhatsApp provider needs inbound internet access. After backend deployment, configure the provider webhook to:
 
 ```text
 https://<backend-api-url>/webhooks/whatsapp

@@ -101,11 +101,32 @@ type PurchaseSummary = {
   recent_orders: Array<{ reference: string; date: string; amount: number; state: string }>;
 };
 
+type OpenBillLine = {
+  product?: string;
+  description?: string;
+  quantity: number;
+  unit_price: number;
+  subtotal: number;
+  total: number;
+};
+
+type OpenBill = {
+  id?: number;
+  reference: string;
+  supplier?: string;
+  date: string;
+  due_date?: string;
+  amount: number;
+  open_amount: number;
+  payment_state: string;
+  lines?: OpenBillLine[];
+};
+
 type OpenBills = {
   total_open_payable: number;
   count: number;
   by_supplier?: Array<{ supplier: string; open_amount: number; count: number }>;
-  bills: Array<{ reference: string; supplier?: string; date: string; due_date?: string; amount: number; open_amount: number; payment_state: string }>;
+  bills: OpenBill[];
 };
 
 type OpenInvoices = {
@@ -685,6 +706,19 @@ function AnalyticsTab({
 }) {
   const [activeDashboard, setActiveDashboard] = useState<AnalyticsDashboard>("sales");
   const [period, setPeriod] = useState<AnalyticsPeriod>("30");
+  const [selectedBillReference, setSelectedBillReference] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!dashboard || activeDashboard !== "purchases") return;
+    const bills = dashboard.open_bills?.bills ?? [];
+    if (!bills.length) {
+      setSelectedBillReference(null);
+      return;
+    }
+    if (!bills.some((bill) => bill.reference === selectedBillReference)) {
+      setSelectedBillReference(bills[0].reference);
+    }
+  }, [activeDashboard, dashboard, selectedBillReference]);
 
   if (!dashboard) {
     return (
@@ -731,6 +765,9 @@ function AnalyticsTab({
   const netCashPosition = receivable - payable;
   const maxFinancialExposure = Math.max(receivable, payable, 1);
   const topSellingProduct = salesBreakdown.sales_by_product?.[0];
+  const openBills = dashboard.open_bills?.bills ?? [];
+  const selectedBill =
+    openBills.find((bill) => bill.reference === selectedBillReference) ?? openBills[0] ?? null;
   const estimatedPeriodProfit =
     typeof salesBreakdown.estimated_gross_profit === "number"
       ? salesBreakdown.estimated_gross_profit
@@ -920,14 +957,29 @@ function AnalyticsTab({
                 <ListRow key={`${item.reference}-${item.date}`} label={item.reference} value={euro.format(item.amount)} detail={`${item.date ?? "No date"} | ${item.state}`} />
               ))}
             </AnalyticsPanel>
-            <AnalyticsPanel
-              title="Open bills to pay"
-            >
-              {(dashboard.open_bills?.bills ?? []).map((item) => (
-                <ListRow key={`${item.reference}-${item.date}`} label={item.reference} value={euro.format(item.open_amount)} detail={`${item.date ?? "No date"} | ${item.payment_state}`} />
-              ))}
-            </AnalyticsPanel>
           </div>
+          <AnalyticsPanel
+            title="Open bills to pay"
+            description="Select a supplier bill to preview the exact bill lines and payment exposure."
+          >
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+              <div className="space-y-2">
+                {openBills.length ? (
+                  openBills.map((item) => (
+                    <SelectableBillRow
+                      key={`${item.reference}-${item.date}`}
+                      bill={item}
+                      selected={item.reference === selectedBill?.reference}
+                      onSelect={() => setSelectedBillReference(item.reference)}
+                    />
+                  ))
+                ) : (
+                  <p className="text-sm text-muted-foreground">No open supplier bills returned.</p>
+                )}
+              </div>
+              <BillPreview bill={selectedBill} />
+            </div>
+          </AnalyticsPanel>
         </div>
       </SectionCard>
       )}
@@ -1819,6 +1871,126 @@ function StockAgeChart({ data }: { data: StockAnalytics["by_age"] }) {
       </ResponsiveContainer>
     </div>
   );
+}
+
+function SelectableBillRow({
+  bill,
+  selected,
+  onSelect,
+}: {
+  bill: OpenBill;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={cn(
+        compactFieldGroupClass,
+        "w-full text-left transition-colors hover:border-violet-400/50 hover:bg-violet-500/10",
+        selected && "border-violet-400 bg-violet-500/10 shadow-sm shadow-violet-500/10"
+      )}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium">{bill.reference}</p>
+          <p className="mt-1 truncate text-xs text-muted-foreground">{bill.supplier ?? "Unknown supplier"}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {bill.date ?? "No date"} | Due {bill.due_date ?? "No due date"} | {formatPaymentState(bill.payment_state)}
+          </p>
+        </div>
+        <span className="shrink-0 text-sm font-semibold text-eyp-blue">{euro.format(bill.open_amount)}</span>
+      </div>
+    </button>
+  );
+}
+
+function BillPreview({ bill }: { bill: OpenBill | null }) {
+  if (!bill) {
+    return (
+      <div className="flex min-h-72 items-center justify-center rounded-2xl border border-dashed border-eyp-blue/20 bg-background/35 p-6 text-center text-sm text-muted-foreground">
+        Select a supplier bill to preview its details.
+      </div>
+    );
+  }
+
+  const lines = bill.lines ?? [];
+
+  return (
+    <div className="rounded-2xl border border-violet-400/25 bg-background/60 p-4 shadow-sm">
+      <div className="flex flex-col gap-3 border-b border-eyp-blue/10 pb-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className={fieldLabelClass}>Selected bill</p>
+          <h3 className="mt-1 text-lg font-semibold">{bill.reference}</h3>
+          <p className="mt-1 text-sm text-muted-foreground">{bill.supplier ?? "Unknown supplier"}</p>
+        </div>
+        <Badge variant="outline">{formatPaymentState(bill.payment_state)}</Badge>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <BillPreviewMetric label="Bill date" value={bill.date ?? "-"} />
+        <BillPreviewMetric label="Due date" value={bill.due_date ?? "-"} />
+        <BillPreviewMetric label="Bill total" value={euro.format(bill.amount)} />
+        <BillPreviewMetric label="Still open" value={euro.format(bill.open_amount)} highlight />
+      </div>
+
+      <div className="mt-5">
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Bill lines</p>
+          <span className="text-xs text-muted-foreground">{lines.length} lines</span>
+        </div>
+        {lines.length ? (
+          <div className="space-y-2">
+            {lines.map((line, index) => (
+              <div key={`${bill.reference}-${line.description}-${index}`} className="rounded-xl border border-eyp-blue/10 bg-eyp-bg-light/45 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{line.product || line.description || "Bill line"}</p>
+                    {line.description && line.description !== line.product ? (
+                      <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{line.description}</p>
+                    ) : null}
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Qty {line.quantity.toLocaleString()} | Unit {euro.format(line.unit_price)}
+                    </p>
+                  </div>
+                  <span className="shrink-0 text-sm font-semibold text-eyp-blue">{euro.format(line.total || line.subtotal)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="rounded-xl border border-eyp-blue/10 bg-eyp-bg-light/45 p-3 text-sm text-muted-foreground">
+            No bill lines returned by Odoo for this bill.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function BillPreviewMetric({
+  label,
+  value,
+  highlight,
+}: {
+  label: string;
+  value: string;
+  highlight?: boolean;
+}) {
+  return (
+    <div className="rounded-xl border border-eyp-blue/10 bg-eyp-bg-light/45 p-3">
+      <p className={fieldLabelClass}>{label}</p>
+      <p className={cn("mt-1 text-sm font-semibold", highlight && "text-eyp-blue")}>{value}</p>
+    </div>
+  );
+}
+
+function formatPaymentState(value: string) {
+  return value
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function ListRow({ label, value, detail }: { label: string; value: string; detail: string }) {

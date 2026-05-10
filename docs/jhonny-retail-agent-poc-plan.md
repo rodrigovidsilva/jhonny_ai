@@ -1,160 +1,255 @@
 # Jhonny Retail Agent POC Plan
 
-**Status:** Local-first implementation in progress
-**Audience:** Tiago, Rodrigo, and founding team
-**Scope:** Web app, analytics, LLM agent, WhatsApp channel, and first paid-pilot readiness
-**Prepared:** May 2026
+**Status:** Review-ready local POC plan
+**Audience:** Tiago, Rodrigo, founding team, and pilot reviewers
+**Scope:** Retail intelligence web app, curated Odoo agent, WhatsApp channel, deployment path, and first paid-pilot readiness
+**Prepared:** May 10, 2026
 
 ---
 
 ## Executive Summary
 
-The goal is to turn the current Jhonny Odoo integration into a simple, sellable retail intelligence product. The first POC should prove one strong loop: Jhonny can see live business analytics in a web app and ask business questions through an agent, while Rodrigo connects the same agent to WhatsApp.
+The Jhonny Retail Agent POC turns live Odoo data into a practical decision tool for a small retail owner. The product now has a local FastAPI backend, a Next.js web app, a richer analytics dashboard, an assisted chat surface, and a WhatsApp webhook scaffold that uses the same backend agent path.
 
-This should remain narrow. The product is not a generic AI platform yet. It is a practical business copilot for small retailers that answers daily owner questions from live operational data: sales, stock value, low stock, category performance, purchases, and basic financial signals.
+The strongest product loop is simple: Jhonny opens the app, sees current sales, stock, purchases, and financial exposure, then asks the assistant what needs attention. The assistant answers from curated Odoo tools rather than free-form database access. This keeps the demo grounded, repeatable, and safer for a paid pilot.
 
-The current build is running locally first: FastAPI on `http://127.0.0.1:8000` and Next.js on `http://127.0.0.1:3000`. Cloud hosting is deferred until the app is demo-ready and Azure or AWS access is confirmed.
+The build remains local-first while the demo flow is stabilized. Cloud deployment should start only after review confirms the demo is strong enough and the team has a confirmed hosting account or subscription. A Render blueprint and Dockerfiles already exist as a reference path, while Azure Container Apps remains the preferred enterprise-aligned option once access is available.
 
 ## Table of Contents
 
 1. Product Goal
-2. Workstream Ownership
+2. Current Implementation
 3. Target Architecture
-4. Tiago Plan: App And Analytics
-5. Rodrigo Plan: WhatsApp Channel
-6. Shared Backend And Agent Plan
-7. Roadmap And Milestones
-8. Commercial Pilot Plan
-9. Risks And Controls
-10. Immediate Next Actions
+4. App Experience
+5. Agent And Tooling
+6. WhatsApp Channel
+7. Deployment And Security
+8. Workstream Ownership
+9. Roadmap And Milestones
+10. Commercial Pilot Plan
+11. Risks And Controls
+12. Review Checklist And Next Actions
 
 ## 1. Product Goal
 
-Build a first POC that Jhonny can actually use and that can be shown to other small retailers.
+Build a first POC that Jhonny can use and that can be shown to similar retailers as a paid-pilot offer. The product should not become a broad AI platform before the first commercial proof points. It should focus on daily owner decisions from systems the retailer already uses.
 
-The first version should include:
-
-| Capability | Description | Success Criteria |
+| Capability | Current Description | Review Success Criteria |
 |---|---|---|
-| Analytics app | Web app with live Odoo dashboards | Jhonny can see sales, stock, categories, and low stock |
-| Agent chat | App chat box for natural-language questions | Owner asks a question and receives a grounded answer from Odoo data |
-| WhatsApp agent | WhatsApp interface for the same agent | Approved phone number receives correct answers |
-| Repeatable pilot | Simple setup path for the next retailer | New client can be onboarded without rewriting the product |
+| Live analytics app | Next.js app with home, analytics, and assisted agent surfaces | Reviewer can understand store performance without reading Odoo directly |
+| Curated business agent | FastAPI `/chat` endpoint uses OpenAI first, Databricks fallback, or deterministic routing | Answers are grounded in tool output and include evidence metadata |
+| Odoo intelligence tools | Read-only tools cover sales, stock, purchases, bills, receivables, margin, risk, and daily priorities | Tool catalogue matches the first buyer questions |
+| WhatsApp channel | Webhook accepts Twilio form payloads and Meta WhatsApp JSON payloads | Approved sender can receive concise grounded answers |
+| Repeatable pilot | Local-first workflow plus container deployment path | Next retailer can be onboarded without rewriting the product |
 
-## 2. Workstream Ownership
+## 2. Current Implementation
 
-| Owner | Primary Focus | Key Deliverables |
-|---|---|---|
-| Tiago | Web app and analytics experience | Analytics tab, agent chat page, app polish, mobile-friendly demo |
-| Rodrigo | WhatsApp feature | WhatsApp provider setup, webhook connection, phone authorization, message formatting |
-| Shared | Backend, tools, LLM agent, deployment | FastAPI backend, Odoo tools, Databricks LLM calls, deployment, logs |
+The current build is a working local POC:
 
-## 3. Target Architecture
-
-```mermaid
-flowchart LR
-  Jhonny[Jhonny] --> App[Next.js Web App]
-  Jhonny --> WhatsApp[WhatsApp]
-  App --> Backend[FastAPI Backend]
-  WhatsApp --> Backend
-  Backend --> Agent[LLM Agent Orchestrator]
-  Agent --> OpenAI[OpenAI API]
-  Agent --> Tools[Business Tools]
-  Tools --> Odoo[Odoo API]
-  Agent --> Answer[Grounded Answer]
-```
-
-The app and WhatsApp should share the same backend and the same agent logic. This avoids building two separate products.
+| Component | Current State |
+|---|---|
+| Backend API | FastAPI app at `http://127.0.0.1:8000` |
+| Web app | Next.js app at `http://127.0.0.1:3000` |
+| Odoo integration | XML-RPC client with authentication, live reads, and retry handling for transient transport failures |
+| Agent | `RetailAgent` orchestrates curated tools, LLM selection, answer writing, evidence summaries, and fallback routing |
+| Frontend shell | EY/EW-style branded app shell with theme support, profile menu, branded header, and client footer |
+| Demo access | `APP_AUTH_TOKEN` protects app endpoints; frontend stores the demo token in local storage |
+| Deployment assets | Root backend Dockerfile, `frontend/Dockerfile`, and `render.yaml` blueprint |
 
 Local development URLs:
 
-| Component | URL |
+| Service | URL |
 |---|---|
 | Web app | `http://127.0.0.1:3000` |
 | Backend API | `http://127.0.0.1:8000` |
 | Health check | `http://127.0.0.1:8000/health` |
 
-## 4. Tiago Plan: App And Analytics
+## 3. Target Architecture
 
-Tiago should focus on making the app simple and usable. The first app should have two modes:
+```mermaid
+flowchart LR
+  Owner["Jhonny or Retail Owner"] --> WebApp["Next.js Web App"]
+  Owner --> WhatsApp["WhatsApp Channel"]
+  WebApp --> FastAPI["FastAPI Backend"]
+  WhatsApp --> FastAPI
+  FastAPI --> Agent["Retail Agent Orchestrator"]
+  Agent --> LLM["OpenAI Primary or Databricks Fallback"]
+  Agent --> Registry["Curated Tool Registry"]
+  Registry --> BusinessTools["Retail Business Tools"]
+  BusinessTools --> Odoo["Odoo XML-RPC API"]
+  Agent --> Evidence["Evidence, Trace, and Answer"]
+  Evidence --> WebApp
+  Evidence --> WhatsApp
+```
 
-| Mode | Purpose | Content |
-|---|---|---|
-| Analytics | Business overview | Today sales, month sales, YTD sales, stock value, category mix, low stock |
-| Agent Chat | Ask the business questions | Chat box, suggested prompts, answer history, tool used |
+The app and WhatsApp channel share the same backend, agent, and tool registry. This matters because the team can improve one agent path and immediately benefit both channels.
 
-Minimum app requirements:
+The target product should preserve three constraints:
 
-- Demo token access.
-- Analytics tab with live Odoo numbers.
-- Agent chat tab with prompt buttons.
-- Clear loading and error states.
-- Mobile-friendly layout for a shop owner.
-- No complex admin area yet.
-
-Suggested first prompts:
-
-- How much did we sell today?
-- What is our stock value?
-- What categories sold today?
-- What is low stock?
-- Give me key financials.
-
-## 5. Rodrigo Plan: WhatsApp Channel
-
-Rodrigo should connect WhatsApp after the backend chat endpoint is stable.
-
-Recommended path:
-
-| Step | Decision | Notes |
-|---|---|---|
-| 1 | Start with Twilio sandbox or Meta WhatsApp Cloud API | Twilio is faster for demo; Meta is better for production |
-| 2 | Point inbound messages to `/webhooks/whatsapp` | Backend already exposes this route |
-| 3 | Restrict approved numbers | Only Jhonny and internal test phones should be allowed |
-| 4 | Test core prompts | Use the same questions as the app |
-| 5 | Add production controls | Signature verification, logging, rate limits |
-
-WhatsApp answers should be shorter than app answers and should avoid sensitive customer data.
-
-## 6. Shared Backend And Agent Plan
-
-The backend should be the product core. It should expose:
-
-| Endpoint | Purpose |
+| Constraint | Reason |
 |---|---|
-| `GET /health` | Hosting and uptime checks |
-| `GET /dashboard` | App analytics data |
-| `POST /chat` | App agent chat |
-| `POST /tools/{tool_name}` | Internal testing for business tools |
-| `POST /webhooks/whatsapp` | WhatsApp inbound messages |
+| Read-only operational access first | Reduces risk during pilot and avoids changing client records |
+| Curated tools only | Prevents unsupported LLM claims and keeps answers explainable |
+| Local-first until reviewed | Avoids cloud work before the demo and commercial story are validated |
 
-The LLM agent should not query raw Odoo freely. It should choose from curated tools:
+## 4. App Experience
 
-| Tool | Purpose |
+The app has three main surfaces: Home, Analytics, and Assisted Agent.
+
+| Surface | Current Content | Purpose |
+|---|---|---|
+| Home | Branded hero, store pulse, daily sales, daily profit, last week sales estimate, profit margin, YTD profit, YTD sales, stock value, supplier bill exposure | Show the value in the first 30 seconds |
+| Analytics | Sales, Stock, Purchases, and Financials dashboards with period selector | Let reviewers inspect the operational data story |
+| Assisted Agent | Chat interface, suggested prompts, session history, answer metadata, evidence trace, request ID | Let the owner ask business questions in plain language |
+
+Current analytics dashboard coverage:
+
+| Dashboard | Included Views |
 |---|---|
-| `get_today_sales` | Current day sales and order count |
-| `get_month_sales` | Month-to-date sales |
-| `get_sales_by_category` | Sales grouped by category |
-| `get_stock_value` | Inventory value and units |
-| `get_stock_value_by_category` | Stock value concentration |
-| `get_low_stock` | Products needing review |
-| `get_key_financials` | YTD sales, stock, purchases, receivables, payables |
+| Sales | Period sales, average daily sales, top product, margin, daily trend, weekday revenue, hourly sales, category ranking, brand ranking |
+| Stock | Stock value, stock units, low-stock items, top stock brand, stock by brand, stock by category, stock antiquity, low-stock watchlist |
+| Purchases | Period purchases, bills to pay, purchase ratio, supplier bill exposure, recent purchase orders, selectable open bill preview with line details |
+| Financials | Receivables, payables, working capital, profitability view, cash exposure, period purchases versus sales |
 
-## 7. Roadmap And Milestones
+The app should continue to be optimized for a shop-owner demo rather than an internal BI analyst workflow. The interface should stay simple, visual, and action-oriented.
 
-| Phase | Timeline | Goal | Owner |
-|---|---:|---|---|
-| Phase 1 | Now | Local app with analytics and agent chat | Tiago |
-| Phase 2 | Next | WhatsApp connected to same agent | Rodrigo |
-| Phase 3 | Next | OpenAI LLM credentials configured and tested | Shared |
-| Phase 4 | Later | Hosted demo with secure secrets and basic logs | Shared |
-| Phase 5 | After Jhonny demo | Paid pilot outreach to similar retailers | Founding team |
+## 5. Agent And Tooling
 
-The most important milestone is a stable demo where the owner asks a question and the answer comes from live Odoo data.
+The agent is grounded in a registry of read-only Odoo tools. With `OPENAI_API_KEY` configured, the agent uses OpenAI for tool planning and answer writing. If OpenAI is not configured, it attempts Databricks Model Serving if those environment variables are present. If no LLM provider is configured, deterministic routing keeps the local demo usable.
 
-## 8. Commercial Pilot Plan
+```mermaid
+sequenceDiagram
+  participant User
+  participant Channel as Web App or WhatsApp
+  participant API as FastAPI
+  participant Agent as RetailAgent
+  participant LLM as LLM Provider
+  participant Tools as Tool Registry
+  participant Odoo
 
-The first paid offer should be simple:
+  User->>Channel: Ask business question
+  Channel->>API: POST /chat or /webhooks/whatsapp
+  API->>Agent: question and channel
+  Agent->>LLM: Select relevant tools when configured
+  Agent->>Tools: Execute curated read-only tools
+  Tools->>Odoo: XML-RPC business reads
+  Odoo-->>Tools: Structured data
+  Tools-->>Agent: Tool results
+  Agent->>LLM: Write grounded answer when configured
+  Agent-->>API: Answer, data, evidence, trace
+  API-->>Channel: Response
+```
+
+Current tool groups:
+
+| Group | Tools |
+|---|---|
+| Sales | `get_today_sales`, `get_daily_sales_series`, `get_month_sales`, `get_sales_by_category`, `get_sales_performance_breakdown`, `get_top_and_bottom_products`, `get_recent_orders` |
+| Stock | `get_stock_value`, `get_stock_value_by_category`, `get_low_stock`, `get_stock_cover_and_velocity`, `get_dead_and_aged_stock` |
+| Purchases | `get_purchase_summary`, `get_purchase_vs_sales_analysis`, `get_supplier_purchase_history`, `get_product_replenishment_insight` |
+| Finance | `get_key_financials`, `get_open_bills`, `get_open_customer_invoices`, `get_profitability_snapshot`, `get_margin_by_product_category_brand`, `get_price_cost_exceptions`, `get_working_capital_snapshot`, `get_financial_risk_alerts` |
+| Briefing | `get_business_snapshot`, `get_daily_owner_briefing`, `get_recommendation_for_question` |
+
+The answer payload can include:
+
+| Field | Purpose |
+|---|---|
+| `answer` | User-facing response |
+| `tool` | Tool or tools used |
+| `data` | Structured result for app inspection |
+| `evidence` | Summary of supporting data |
+| `tool_trace` | Tools, arguments, latency, and result summaries |
+| `visualization` | Chart payload when a visual answer is appropriate |
+| `llm_provider` | `openai`, `databricks`, `fallback`, or `not_configured` |
+| `request_id` | Traceability for logs and review |
+
+## 6. WhatsApp Channel
+
+The WhatsApp route is implemented as:
+
+```text
+POST /webhooks/whatsapp
+```
+
+It accepts:
+
+| Provider Path | Payload | Response |
+|---|---|---|
+| Twilio WhatsApp sandbox or production | Form-encoded `From` and `Body` | TwiML XML response |
+| Meta WhatsApp Cloud API | JSON webhook payload | JSON response with `answer` and `tool` |
+
+Production safeguards already represented in the backend:
+
+| Control | Current Behavior |
+|---|---|
+| Sender allowlist | `WHATSAPP_ALLOWED_NUMBERS` restricts approved phone numbers when set |
+| Rate limiting | `WHATSAPP_RATE_LIMIT_PER_MINUTE` limits messages by sender |
+| Twilio signature | `TWILIO_AUTH_TOKEN` validates `x-twilio-signature` against `PUBLIC_WHATSAPP_WEBHOOK_URL` |
+| Meta signature | `WHATSAPP_APP_SECRET` validates `X-Hub-Signature-256` |
+| Short channel answers | Agent keeps WhatsApp answers shorter than app answers |
+| Sensitive data control | Agent prompt avoids customer personal data |
+
+WhatsApp should remain a secondary channel until the app demo is strong. It is valuable because it makes the owner experience immediate, but it should not drive scope creep before the core analytics and agent story are approved.
+
+## 7. Deployment And Security
+
+The current recommendation is still local-first until the review confirms demo readiness. When hosted access is available, deploy two services:
+
+| Service | Artifact | Notes |
+|---|---|---|
+| Backend API | Root `Dockerfile` | FastAPI, Odoo credentials, LLM credentials, WhatsApp secrets |
+| Web app | `frontend/Dockerfile` | Next.js app with `NEXT_PUBLIC_API_BASE_URL` |
+
+Hosting options:
+
+| Option | Recommendation |
+|---|---|
+| Azure Container Apps | Preferred first enterprise path once Azure access exists |
+| Render | Existing `render.yaml` blueprint is available for quick two-service deployment |
+| AWS App Runner or ECS Fargate | Valid if AWS access arrives before Azure |
+
+Managed secrets needed for a hosted demo:
+
+| Area | Variables |
+|---|---|
+| Odoo | `ODOO_URL`, `ODOO_DB`, `ODOO_USERNAME`, `ODOO_API_KEY` |
+| App auth and CORS | `APP_AUTH_TOKEN`, `APP_CORS_ORIGINS`, `NEXT_PUBLIC_API_BASE_URL` |
+| WhatsApp | `WHATSAPP_ALLOWED_NUMBERS`, `WHATSAPP_RATE_LIMIT_PER_MINUTE`, `PUBLIC_WHATSAPP_WEBHOOK_URL`, `TWILIO_AUTH_TOKEN`, `WHATSAPP_APP_SECRET` |
+| LLM | `OPENAI_API_KEY`, `OPENAI_MODEL`, optional `DATABRICKS_HOST`, `DATABRICKS_TOKEN`, `DATABRICKS_MODEL_ENDPOINT` |
+
+Security review notes:
+
+- Rotate any Odoo API key used during development before production or paid pilot hosting.
+- Keep `.env` local and out of commits.
+- Keep app endpoints protected with `APP_AUTH_TOKEN` until a proper login model is needed.
+- Do not expose customer personal data in WhatsApp responses.
+- Treat estimated profitability and margins as decision support, not statutory accounting output.
+
+## 8. Workstream Ownership
+
+| Owner | Primary Focus | Current Deliverables |
+|---|---|---|
+| Tiago | Web app and analytics experience | Home, Analytics, Assisted Agent, frontend polish, mobile-friendly demo flow |
+| Rodrigo | WhatsApp feature | Provider decision, webhook setup, phone allowlist, message testing, signature configuration |
+| Shared | Backend, Odoo tools, LLM, deployment, validation | FastAPI API, tool registry, OpenAI/Databricks routing, Docker path, smoke tests |
+| Founding team | Commercial pilot readiness | Demo script, pricing, outreach, pilot qualification, client feedback loop |
+
+## 9. Roadmap And Milestones
+
+| Phase | Timing | Goal | Owner | Exit Criteria |
+|---|---:|---|---|---|
+| 1 | Now | Review-ready local app and plan | Shared | App opens locally, dashboard loads, chat answers from Odoo tools |
+| 2 | Next | Demo polish and validation | Tiago | 5-minute demo works without engineering explanation |
+| 3 | Next | WhatsApp provider test | Rodrigo | Approved number receives correct answer through webhook |
+| 4 | Next | Hosted review environment | Shared | Managed secrets, HTTPS, CORS, auth token, health checks, logs |
+| 5 | After Jhonny feedback | Paid pilot outreach | Founding team | 10 to 20 qualified retailers contacted with clear pilot offer |
+| 6 | After 3 to 5 pilots | Productization decision | Founding team | Repeatable pain, pricing, onboarding effort, and usage evidence are proven |
+
+The next milestone should be a stable owner demo where the reviewer can see live data, ask a question, inspect the evidence, and understand the paid-pilot offer.
+
+## 10. Commercial Pilot Plan
+
+The first paid offer should stay narrow and outcome-focused.
 
 | Item | Recommendation |
 |---|---|
@@ -163,30 +258,57 @@ The first paid offer should be simple:
 | Anchor offer | EUR 2,000 setup plus EUR 500 per month |
 | Pilot duration | 2 to 4 weeks |
 | Target clients | Small retailers with 1 to 10 stores |
+| First verticals | Surf, outdoor, fashion, footwear, sports equipment, lifestyle retail |
 
-Do not sell it as "AI". Sell it as fast daily business answers from systems the retailer already uses.
+Do not sell the product as generic AI. Sell it as fast daily business answers from systems the retailer already uses.
 
-## 9. Risks And Controls
+Pilot scope:
+
+| Included | Excluded For First Pilot |
+|---|---|
+| One operational system connection, starting with Odoo | Forecasting engine |
+| Core dashboards for sales, stock, purchases, and financial exposure | Custom ERP workflows |
+| Assisted questions in the web app | Deep accounting reconciliation |
+| WhatsApp owner questions when provider access is available | Full multi-tenant SaaS admin |
+| Weekly review call and end-of-pilot recommendation | Custom data science project |
+
+## 11. Risks And Controls
 
 | Risk | Impact | Control |
 |---|---|---|
-| Numbers do not match Odoo UI | Loss of trust | Validate key metrics manually with Jhonny |
-| WhatsApp exposes sensitive data | Security risk | Restrict phone numbers and avoid customer personal data |
-| Team builds too much before selling | Slow revenue | Keep the first version narrow |
-| LLM gives unsupported answers | Trust risk | Force answers through curated tools |
-| Credentials are exposed | Security risk | Rotate Odoo key and use managed secrets before deployment |
-| Cloud work starts too early | Delivery risk | Keep development local until demo readiness and cloud access are confirmed |
+| Metrics do not match Odoo UI | Loss of trust | Validate core numbers with Jhonny before external demos |
+| Estimated margin is mistaken for accounting profit | Bad decisions | Label margin as estimated from standard cost and include caveats |
+| WhatsApp exposes sensitive data | Security risk | Restrict numbers, verify signatures, avoid customer personal data |
+| LLM invents unsupported claims | Trust risk | Force answers through curated tools and evidence summaries |
+| Development credentials leak | Security risk | Keep `.env` ignored, rotate Odoo key before hosted demo |
+| App becomes too broad before selling | Slow revenue | Keep pilot scope around sales, stock, purchases, margin, and daily priorities |
+| Cloud work starts too early | Delivery risk | Host only after demo review and access are confirmed |
+| Odoo field quality varies by client | Onboarding risk | Document required models and add validation checks per new retailer |
 
-## 10. Immediate Next Actions
+## 12. Review Checklist And Next Actions
+
+Review checklist:
+
+| Check | Expected Result |
+|---|---|
+| Backend health | `GET /health` returns `{"status":"ok"}` |
+| Dashboard | `GET /dashboard` returns live Odoo metrics when `X-App-Token` is valid |
+| Agent chat | `POST /chat` returns answer, tool, evidence, trace, provider, and request ID |
+| OpenAI path | `scripts/smoke_openai_chat.py` confirms `llm_provider` is `openai` when credentials are set |
+| Security checks | `scripts/evaluate_api_security.py` passes sender allowlist, rate limit, and signature tests |
+| Agent routing | `scripts/evaluate_agent.py` passes deterministic routing checks |
+| Frontend build | `npm run build` passes in `frontend/` before hosted deployment |
+
+Immediate next actions:
 
 | Priority | Action | Owner |
 |---:|---|---|
-| 1 | Polish the two-tab app for Jhonny: Analytics and Agent Chat | Tiago |
-| 2 | Keep validating local dashboard and chat with live Odoo data | Shared |
-| 3 | Configure OpenAI API credentials and smoke-test `/chat` | Shared |
-| 4 | Connect WhatsApp provider to `/webhooks/whatsapp` | Rodrigo |
-| 5 | Decide Azure or AWS only after access is available | Shared |
-| 6 | Run a 5-minute Jhonny demo and collect feedback | Founding team |
-| 7 | Use feedback to approach 10 to 20 similar retailers | Founding team |
+| 1 | Run the app locally and rehearse the 5-minute review demo | Tiago |
+| 2 | Validate sales, stock, purchase, and bill numbers against Odoo UI | Shared |
+| 3 | Run OpenAI smoke test before any external review | Shared |
+| 4 | Decide whether the review needs WhatsApp live or app-only demo | Rodrigo and founding team |
+| 5 | If WhatsApp is included, configure provider, public URL, allowlist, and signature secret | Rodrigo |
+| 6 | Prepare hosted environment only after local demo approval | Shared |
+| 7 | Use Jhonny feedback to qualify 10 to 20 similar retailers for paid pilots | Founding team |
 
-The current priority is to make the app feel real and useful for Jhonny. Once the app and WhatsApp both work from live data, the team should start selling paid pilots immediately rather than waiting for a full SaaS platform.
+The POC is now strong enough to review as a focused retail intelligence demo. The team should use the review to decide whether to polish for Jhonny first, connect WhatsApp live, or move directly into a hosted pilot environment.

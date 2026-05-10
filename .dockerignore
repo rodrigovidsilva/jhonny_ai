@@ -1,0 +1,16 @@
+.git
+.gitignore
+.env
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+node_modules/
+.next/
+frontend/node_modules/
+frontend/.next/
+dist/
+build/
+*.log
+*.tsbuildinfo
