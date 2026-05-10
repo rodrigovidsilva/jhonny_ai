@@ -775,29 +775,59 @@ class RetailBusinessTools:
         """Search active products whose name OR sku matches the query (case-insensitive).
         Returns total stock + price across all matching variants. Ideal for questions like
         "how many wetsuits do I have?" or "do I sell board shorts?".
+
+        Tries multiple variants of the query (original, singular, individual words) and
+        merges results to be robust to Portuguese/English plurals and multi-word queries.
         """
         clean_query = (query or "").strip()
         if not clean_query:
             return {"query": "", "match_count": 0, "total_qty_available": 0.0, "products": []}
 
-        # Search both by name and by default_code (SKU). OR domain in Odoo syntax.
-        products = self.client.search_read(
-            "product.product",
-            domain=[
-                ["active", "=", True],
-                "|",
-                ["name", "ilike", clean_query],
-                ["default_code", "ilike", clean_query],
-            ],
-            fields=["default_code", "name", "qty_available", "virtual_available", "list_price", "categ_id"],
-            limit=limit,
-        )
+        # Build query variants to try (most specific first).
+        variants: list[str] = []
+        seen: set[str] = set()
+
+        def add(q: str) -> None:
+            q = q.strip()
+            if q and len(q) >= 3 and q.lower() not in seen:
+                seen.add(q.lower())
+                variants.append(q)
+
+        add(clean_query)
+        # Singular forms (drop trailing s if length > 3) — handles plurals in PT/EN.
+        if clean_query.lower().endswith("s") and len(clean_query) > 3:
+            add(clean_query[:-1])
+        # Individual words (>= 3 chars), useful for multi-word queries.
+        for word in clean_query.split():
+            add(word)
+            if word.lower().endswith("s") and len(word) > 3:
+                add(word[:-1])
+
+        # Try each variant in order, stop on first that returns results.
+        products: list[dict[str, Any]] = []
+        used_variant = clean_query
+        for variant in variants:
+            products = self.client.search_read(
+                "product.product",
+                domain=[
+                    ["active", "=", True],
+                    "|",
+                    ["name", "ilike", variant],
+                    ["default_code", "ilike", variant],
+                ],
+                fields=["default_code", "name", "qty_available", "virtual_available", "list_price", "categ_id"],
+                limit=limit,
+            )
+            if products:
+                used_variant = variant
+                break
 
         total_qty = sum(float(p.get("qty_available") or 0) for p in products)
         total_value = sum(float(p.get("qty_available") or 0) * float(p.get("list_price") or 0) for p in products)
 
         return {
             "query": clean_query,
+            "matched_variant": used_variant,
             "match_count": len(products),
             "total_qty_available": round(total_qty, 2),
             "total_retail_value_eur": round(total_value, 2),
