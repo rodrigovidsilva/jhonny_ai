@@ -343,10 +343,20 @@ class RetailAgent:
                 "intent": "help",
                 "llm_provider": self.llm.provider if self.llm else "not_required",
             }
-        if len(normalized.split()) <= 2 and not any(
-            term in normalized
-            for term in ["sale", "sales", "stock", "buy", "purchase", "margin", "profit", "cost", "price"]
-        ):
+        # Only ask for clarification if it's truly an empty / single-word vague greeting.
+        # "Top sellers", "Stock UGG", "Vendas hoje", etc. (2 words) are legitimate business questions.
+        BUSINESS_HINTS = [
+            "sale", "sales", "stock", "buy", "purchase", "margin", "profit", "cost", "price",
+            "venda", "vendas", "fatur", "compr", "lucro", "marg", "preco", "preço",
+            "top", "best", "worst", "low", "dead", "high", "open", "owe", "due", "client", "cliente",
+            "supplier", "fornecedor", "vendor", "invoice", "fatura", "bill", "report",
+            "wetsuit", "fato", "boots", "botas", "shorts", "cap", "boné", "bone",
+            "rip curl", "o'neill", "billabong", "fcs", "futures", "yeti", "ugg", "roark",
+            "katin", "blundstone", "firewire", "patagonia", "dakine", "channel", "nmd",
+            "knockaround", "xcel", "rhythm", "deflow", "fins", "leash", "deck", "boardbag",
+            "surfboard", "bodyboard", "shirt", "hoodie", "jacket",
+        ]
+        if len(normalized.split()) <= 1 and not any(term in normalized for term in BUSINESS_HINTS):
             return {
                 "answer": "Can you tell me which part of the business you want to check: sales, stock, purchases, margins, or financial risks?",
                 "tool": "clarification",
