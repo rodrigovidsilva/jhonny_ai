@@ -192,19 +192,32 @@ class RetailAgent:
                 ChatMessage(
                     role="system",
                     content=(
-                        "You are the planner for Jhonny Surf's AI business assistant. "
-                        "Choose read-only Odoo intelligence tools that help answer Jhonny's question about sales, stock, purchases, financials, margins, brands, categories, costs, and prices. "
-                        "Return only valid JSON with key tools as an array of objects with tool_name and arguments. "
+                        "You are the planner for Jhonny Surf's AI business assistant. The store sells surf gear, wetsuits, surfboards, apparel, footwear and lifestyle goods. "
+                        "Pick the BEST tool from the list below to answer Jhonny's question. "
+                        "Return only valid JSON: {\"tools\":[{\"tool_name\":\"...\",\"arguments\":{...}}]}. "
                         f"Choose at most {remaining_tools} tools. Do not answer the user. "
-                        "Use get_daily_owner_briefing for broad daily priorities. "
-                        "Use get_recommendation_for_question when the question asks what Jhonny should do and no narrower tool is clearly enough. "
-                        "Use get_daily_sales_series for visual, chart, graph, trend, or sales-by-day questions. "
-                        "Use get_product_replenishment_insight for buy/no-buy product-family questions such as kids wetsuits, boards, boots, or accessories. "
-                        "Use get_margin_by_product_category_brand and get_price_cost_exceptions for margin, cost, or price questions. "
-                        "Use get_purchase_vs_sales_analysis when relating purchases to sales. "
-                        "If observed tool data is already sufficient and empty tools are allowed, return {\"tools\":[]}. "
+                        "\n\nDECISION RULES (read in order — first matching rule wins):\n"
+                        "1. If the question mentions a SPECIFIC product TYPE (wetsuit, fato, boots, botas, fins, leash, t-shirt, hoodie, jacket, shorts, calção, surfboard, prancha, bodyboard, backpack, mochila, bottle, garrafa, cap, hat, boné, sandals, chinelos, etc.) "
+                        "or a SPECIFIC BRAND (Rip Curl, O'Neill, Billabong, Roark, Katin, FCS, Futures, Firewire, Channel Islands, Blundstone, UGG, Yeti, Patagonia, Dakine, NMD, Knockaround, Xcel, Deflow, Suntribe, etc.) "
+                        "or a SPECIFIC SKU/code, USE search_products_by_name with the relevant English keyword as query. "
+                        "Examples: 'quantos fatos tenho' -> search_products_by_name(query='wetsuit'). 'stock UGG' -> search_products_by_name(query='UGG'). 'tenho board shorts' -> search_products_by_name(query='boardshorts'). "
+                        "2. For the WHOLE store stock value -> get_stock_value. For value BY category -> get_stock_value_by_category. \n"
+                        "3. For sales TODAY -> get_today_sales. THIS WEEK or trend -> get_daily_sales_series. THIS or PAST MONTH -> get_month_sales. \n"
+                        "4. For best/worst sellers -> get_top_and_bottom_products. For sales BY CATEGORY today -> get_sales_by_category. \n"
+                        "5. For 'should I buy/reorder' questions about a product family -> get_product_replenishment_insight. For low stock alert -> get_low_stock. \n"
+                        "6. For supplier/vendor spend -> get_supplier_purchase_history. For open vendor bills/payables -> get_open_bills. For customer receivables -> get_open_customer_invoices. \n"
+                        "7. For overall snapshot, KPIs, financial health -> get_key_financials or get_business_snapshot. For daily summary -> get_daily_owner_briefing. \n"
+                        "8. For margin/profitability questions -> get_margin_by_product_category_brand or get_profitability_snapshot. \n"
+                        "9. For cash flow -> get_working_capital_snapshot. For risk alerts -> get_financial_risk_alerts. \n"
+                        "\nPORTUGUESE-TO-ENGLISH PRODUCT GLOSSARY (the Odoo data is in English; translate before searching):\n"
+                        "  fato/fatos -> wetsuit | botas -> boots | calção/calções -> shorts or boardshorts | "
+                        "chinelos -> sandals | mochila -> backpack | garrafa -> bottle | óculos -> sunglasses | "
+                        "boné -> cap or hat | meias -> socks | prancha/pranchas -> surfboard | sapatos -> shoes (use boots/sandals if not found) | "
+                        "cinto -> belt | carteira -> wallet | toalha -> towel | vestido -> dress | saia -> skirt | poncho -> poncho | colete -> vest\n"
+                        "\nALWAYS prefer search_products_by_name when there is ANY product/brand keyword in the question.\n"
+                        "\nIf observed tool data is already enough and empty allowed, return {\"tools\":[]}. "
                         f"Empty tools allowed: {allow_empty}. "
-                        "Available structured tools:\n"
+                        "\n\nAvailable tools (full schema):\n"
                         f"{self.registry.describe()}"
                     ),
                 ),
@@ -390,6 +403,64 @@ class RetailAgent:
 
     def _answer_with_rules(self, question: str) -> dict[str, Any]:
         normalized = question.lower().strip()
+
+        # PT->EN translation map for product types and a list of known brands.
+        # If any of these appears in the question, route to search_products_by_name
+        # BEFORE any of the generic stock/sales rules below.
+        _PT_EN_MAP = {
+            "fato": "wetsuit", "fatos": "wetsuit", "wetsuit": "wetsuit", "wetsuits": "wetsuit",
+            "botas": "boots", "boots": "boots",
+            "chinelos": "sandals", "sandals": "sandals", "sandalia": "sandals", "sandalias": "sandals",
+            "calcao": "boardshorts", "calção": "boardshorts", "calcoes": "boardshorts", "calções": "boardshorts",
+            "shorts": "shorts", "boardshorts": "boardshorts", "boardshort": "boardshorts",
+            "mochila": "backpack", "mochilas": "backpack", "backpack": "backpack", "backpacks": "backpack",
+            "garrafa": "bottle", "garrafas": "bottle", "bottle": "bottle", "bottles": "bottle",
+            "oculos": "sunglasses", "óculos": "sunglasses", "sunglasses": "sunglasses",
+            "bone": "cap", "boné": "cap", "cap": "cap", "hat": "hat", "chapeu": "hat", "chapéu": "hat",
+            "meias": "socks", "socks": "socks",
+            "prancha": "surfboard", "pranchas": "surfboard", "surfboard": "surfboard", "surfboards": "surfboard",
+            "fins": "fins", "leash": "leash", "leashes": "leash",
+            "deck": "deck", "decks": "deck", "boardbag": "boardbag", "boardbags": "boardbag",
+            "bodyboard": "bodyboard", "bodyboards": "bodyboard",
+            "t-shirt": "shirt", "t-shirts": "shirt", "tshirt": "shirt", "tshirts": "shirt", "shirt": "shirt",
+            "hoodie": "hoodie", "hoodies": "hoodie", "jacket": "jacket", "jackets": "jacket",
+            "wax": "wax", "neoprene": "neoprene", "poncho": "poncho", "ponchos": "poncho",
+        }
+        _BRANDS = [
+            "rip curl", "ripcurl", "o'neill", "oneill", "billabong", "xcel", "patagonia",
+            "fcs", "futures", "deflow", "dakine", "channel islands", "channel",
+            "firewire", "nmd", "devoted", "roark", "katin", "rhythm",
+            "blundstone", "ugg", "yeti", "chug", "knockaround", "suntribe",
+        ]
+
+        product_query = None
+        for kw in sorted(_PT_EN_MAP, key=len, reverse=True):
+            if kw in normalized:
+                product_query = _PT_EN_MAP[kw]
+                break
+        if not product_query:
+            for brand in _BRANDS:
+                if brand in normalized:
+                    product_query = brand
+                    break
+
+        if product_query and ("stock" in normalized or "tenho" in normalized or "have" in normalized
+                              or "quantos" in normalized or "quantas" in normalized or "how many" in normalized):
+            try:
+                result = self.tools.search_products_by_name(query=product_query, limit=50)
+                qty = result.get("total_qty_available", 0)
+                value = result.get("total_retail_value_eur", 0)
+                matched = result.get("match_count", 0)
+                return {
+                    "answer": (
+                        f"Tens {qty:.0f} unidades em stock de produtos relacionados com '{product_query}' "
+                        f"({matched} variantes), valor de retalho EUR {value:,.2f}."
+                    ),
+                    "tool": "search_products_by_name",
+                    "data": {"search_products_by_name": result},
+                }
+            except Exception:
+                pass
 
         if any(value in normalized for value in ["visual", "chart", "graph", "trend", "representation"]) and (
             "sale" in normalized or "sell" in normalized
