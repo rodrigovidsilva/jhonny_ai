@@ -11,7 +11,9 @@ from src.tool_registry import ToolRegistry
 
 
 def format_euro(value: float | int) -> str:
-    return f"EUR {float(value):,.2f}"
+    formatted = f"{float(value):,.2f}"
+    formatted = formatted.replace(",", "X").replace(".", ",").replace("X", ".")
+    return f"EUR {formatted}"
 
 
 def sales_chart_payload(series: dict[str, Any]) -> dict[str, Any]:
@@ -266,22 +268,25 @@ class RetailAgent:
         tool_trace: list[dict[str, Any]],
     ) -> str:
         assert self.llm is not None
-        max_length = "2 short sentences" if channel == "whatsapp" else "one concise paragraph"
+        max_length = "2 frases curtas" if channel == "whatsapp" else "um parágrafo conciso"
         return self.llm.complete(
             [
                 ChatMessage(
                     role="system",
                     content=(
-                        "You are the Jhonny Surf business assistant. "
-                        "Jhonny owns a family-style surf retail business using Odoo. "
-                        "Your job is to turn Odoo data into clear owner decisions about sales, purchases, stocks, bills, receivables, payables, profitability, and operational priorities. "
-                        "Answer only from the provided tool result JSON. Do not invent numbers. "
-                        "If the data is incomplete, say exactly what is missing and what can still be concluded. "
-                        "Write currency as EUR 123.45 when amounts are present; do not use the € symbol. Avoid customer personal data. "
-                        "For profitability, clearly label estimates and avoid presenting estimated margin as statutory profit. "
-                        "When making a recommendation, mention the evidence behind it in plain language. "
-                        "If a visualization is provided by the app, summarize the business meaning of the visual. "
-                        f"Keep the answer to {max_length} and end with one practical recommendation when useful."
+                        "És o assistente de negócio da Jhonny Surf, uma loja de surf em Portugal que usa Odoo. "
+                        "RESPONDE SEMPRE EM PORTUGUÊS DE PORTUGAL, mesmo que a pergunta venha em inglês ou noutra língua. "
+                        "Não uses português do Brasil — usa formas europeias: 'stock' (não 'estoque'), 'fato' (não 'roupa'), 'a faturar' (não 'faturando'), 'tens' (não 'você tem'), etc. "
+                        "Trata o utilizador por 'tu' (informal). "
+                        "O teu trabalho é transformar dados do Odoo em decisões claras de dono de loja sobre vendas, compras, stocks, faturas, recebimentos, pagamentos, rentabilidade e prioridades operacionais. "
+                        "Responde APENAS com base no JSON dos resultados das tools. NÃO inventes números. "
+                        "Se os dados forem insuficientes, diz exatamente o que falta e o que ainda assim podes concluir. "
+                        "Formata valores como 'EUR 1.234,56' (separador de milhares . e decimal ,) e usa 'EUR' em vez do símbolo €. "
+                        "Evita dados pessoais de clientes. "
+                        "Para rentabilidade, marca claramente as estimativas (não apresentes margem estimada como lucro contabilístico). "
+                        "Quando fizeres uma recomendação, justifica-a com a evidência dos dados em linguagem simples. "
+                        "Se a app fornecer uma visualização, resume o significado de negócio do gráfico. "
+                        f"Mantém a resposta com no máximo {max_length} e termina com uma recomendação prática quando fizer sentido."
                     ),
                 ),
                 ChatMessage(
@@ -310,28 +315,28 @@ class RetailAgent:
 
         if has_greeting and has_wellbeing:
             return {
-                "answer": "Hi Jhonny, I’m ready to help with the shop. Ask me what sold today, what stock is risky, whether purchases are too high, or what you should focus on.",
+                "answer": "Olá Jhonny, estou pronto para ajudar com a loja. Pergunta-me o que vendeste hoje, que stock está em risco, se as compras estão altas, ou em que te deves focar.",
                 "tool": "conversation",
                 "intent": "small_talk",
                 "llm_provider": self.llm.provider if self.llm else "not_required",
             }
         if normalized in greetings or normalized_phrase in greetings:
             return {
-                "answer": "Hi Jhonny, I’m your Jhonny Surf AI assistant. I can help you check sales, stock, purchases, margins, financial risks, and what needs attention today.",
+                "answer": "Olá Jhonny, sou o teu assistente AI da Jhonny Surf. Posso ajudar-te a verificar vendas, stock, compras, margens, riscos financeiros e o que precisa de atenção hoje.",
                 "tool": "conversation",
                 "intent": "greeting",
                 "llm_provider": self.llm.provider if self.llm else "not_required",
             }
         if normalized in wellbeing or normalized_phrase in wellbeing:
             return {
-                "answer": "I’m ready to help with the shop. Ask me what sold today, what stock is risky, whether purchases are too high, or what you should focus on.",
+                "answer": "Estou pronto para ajudar com a loja. Pergunta-me o que vendeste hoje, que stock está em risco, se as compras estão altas, ou em que te deves focar.",
                 "tool": "conversation",
                 "intent": "small_talk",
                 "llm_provider": self.llm.provider if self.llm else "not_required",
             }
         if any(phrase in normalized for phrase in identity_phrases):
             return {
-                "answer": "I’m Jhonny Surf’s AI business assistant, connected to curated Odoo tools so I can help with sales, stock, purchases, financials, margins, brands, categories, costs, and prices.",
+                "answer": "Sou o assistente AI de negócio da Jhonny Surf, ligado a tools do Odoo para te ajudar com vendas, stock, compras, financials, margens, marcas, categorias, custos e preços.",
                 "tool": "conversation",
                 "intent": "identity",
                 "llm_provider": self.llm.provider if self.llm else "not_required",
@@ -358,7 +363,7 @@ class RetailAgent:
         ]
         if len(normalized.split()) <= 1 and not any(term in normalized for term in BUSINESS_HINTS):
             return {
-                "answer": "Can you tell me which part of the business you want to check: sales, stock, purchases, margins, or financial risks?",
+                "answer": "Diz-me sobre que parte do negócio queres saber: vendas, stock, compras, margens, ou riscos financeiros?",
                 "tool": "clarification",
                 "intent": "ambiguous",
                 "llm_provider": self.llm.provider if self.llm else "not_required",
@@ -367,9 +372,9 @@ class RetailAgent:
 
     def _help_answer(self, channel: str) -> str:
         if channel == "whatsapp":
-            return "I can help with Jhonny Surf sales, stock, purchases, margins, and daily priorities. Try: “what should I focus on today?”"
+            return "Posso ajudar-te com vendas, stock, compras, margens e prioridades do dia da Jhonny Surf. Experimenta: 'em que me devo focar hoje?'"
         return (
-            "I’m Jhonny Surf’s AI business assistant. Ask me about sales performance, stock cover, what to buy, margin by brand/category, price-cost issues, purchases versus sales, receivables, payables, or what Jhonny should focus on today."
+            "Sou o assistente AI de negócio da Jhonny Surf. Pergunta-me sobre performance de vendas, cobertura de stock, o que comprar, margem por marca/categoria, problemas de preço/custo, compras vs vendas, recebimentos, pagamentos, ou em que te deves focar hoje."
         )
 
     def _normalize_tool_arguments(self, tool_name: str, arguments: dict[str, Any], question: str) -> dict[str, Any]:
@@ -464,7 +469,7 @@ class RetailAgent:
                 return {
                     "answer": (
                         f"Tens {qty:.0f} unidades em stock de produtos relacionados com '{product_query}' "
-                        f"({matched} variantes), valor de retalho EUR {value:,.2f}."
+                        f"({matched} variantes), valor de retalho {format_euro(value)}."
                     ),
                     "tool": "search_products_by_name",
                     "data": {"search_products_by_name": result},
@@ -738,8 +743,8 @@ class RetailAgent:
 
         return {
             "answer": (
-                "I can answer questions like: How much did we sell today? "
-                "What is our stock value? What categories sold today? What is low stock?"
+                "Posso responder a perguntas como: Quanto vendi hoje? "
+                "Qual é o valor do meu stock? Que categorias venderam hoje? O que está com stock baixo?"
             ),
             "tool": "fallback",
         }
